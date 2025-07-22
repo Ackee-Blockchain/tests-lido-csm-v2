@@ -1,0 +1,14 @@
+[compiler.solc]
+exclude_paths = ["csm/lib", "csm/node_modules", "csm/script", "csm/test"]
+remappings = [
+    "csm:@openzeppelin/contracts/=csm/node_modules/@openzeppelin/contracts/",
+    "csm:@openzeppelin/contracts-upgradeable/=csm/node_modules/@openzeppelin/contracts-upgradeable/",
+]
+
+[subproject.csm]
+paths = ["./csm", "./tests/csm/MockLocator.sol", "./tests/csm/MockTriggerableWithdrawalsGateway.sol"]
+evm_version = "cancun"
+target_version = "0.8.24"
+
+[testing]
+cmd = "revm"
