@@ -4573,6 +4573,34 @@ class CSMFuzzTest(FuzzTest):
                     no, t
                 ) == self.accounting.getClaimableBondShares(no.id)
 
+                leaf = keccak256(abi.encode(uint(no.id), uint(no.total_rewards)))
+                try:
+                    leaf_index = self.rewards_tree.leaves.index(leaf)
+                    proof = self.rewards_tree.get_proof(leaf_index)
+                    claimable_with_pull = self._get_claimable_bond_shares_with_pull(no, t)
+                    assert self.accounting.getClaimableRewardsAndBondShares(
+                        no.id,
+                        no.total_rewards,
+                        proof,
+                    ) == claimable_with_pull
+
+                    with chain.snapshot_and_revert():
+                        with may_revert() as ex:
+                            assert self.accounting.claimRewardsStETH(
+                                no.id,
+                                uint.max,
+                                no.total_rewards,
+                                proof,
+                                from_=no.manager,
+                            ).return_value == claimable_with_pull
+
+                        if claimable_with_pull == 0:
+                            assert ex.value == CSAccounting.NothingToClaim()
+                        else:
+                            assert ex.value is None
+                except ValueError:
+                    pass
+
                 unbonded = (
                     no.total_keys
                     - no.withdrawn_keys
