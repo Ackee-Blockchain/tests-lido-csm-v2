@@ -1,8 +1,11 @@
 [compiler.solc]
-exclude_paths = ["csm/lib", "csm/node_modules", "csm/script", "csm/test"]
+exclude_paths = ["csm/lib", "csm/node_modules", "csm/script", "csm/test", "tw/node_modules", "tw/test"]
 remappings = [
     "csm:@openzeppelin/contracts/=csm/node_modules/@openzeppelin/contracts/",
     "csm:@openzeppelin/contracts-upgradeable/=csm/node_modules/@openzeppelin/contracts-upgradeable/",
+    "tw:@openzeppelin/contracts-v4.4/=tw/node_modules/@openzeppelin/contracts-v4.4/",
+    "tw:@openzeppelin/contracts/=tw/node_modules/@openzeppelin/contracts/",
+    "tw:contracts/=tw/contracts/",
 ]
 
 [subproject.csm]
