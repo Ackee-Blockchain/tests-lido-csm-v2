@@ -8,7 +8,8 @@ This repository serves as an example of tests written using a development and te
 1. Clone this repository
 2. `git submodule update --init --recursive` if not cloned with `--recursive`
 3. `cd csm && yarn install && cd ..` to install CSM dependencies
-4. `./compile_old_solidity.sh` to compile contracts with older Solidity versions not supported by Wake
+4. `cd tw && yarn install && cd ..` to install TW (Lido core) dependencies
+5. `./compile_old_solidity.sh` to compile contracts with older Solidity versions not supported by Wake
 
 ## Running fuzz tests
 
