@@ -1674,6 +1674,12 @@ class CSMFuzzTest(FuzzTest):
                 )
                 in tx.events
             )
+        else:
+            assert not any(
+                e
+                for e in tx.events
+                if isinstance(e, CSModule.VettedSigningKeysCountChanged)
+            )
 
         no.total_keys += keys_count
         no.bond_shares += shares
@@ -2395,6 +2401,12 @@ class CSMFuzzTest(FuzzTest):
                     )
                     in tx.events
                 )
+            else:
+                assert not any(
+                    e
+                    for e in tx.events
+                    if isinstance(e, HashConsensus.QuorumSet)
+                )
 
             self.consensus_members.add(member)
             self.consensus_quorum = quorum
@@ -2428,6 +2440,12 @@ class CSMFuzzTest(FuzzTest):
                         quorum, len(self.consensus_members) - 1, self.consensus_quorum
                     )
                     in tx.events
+                )
+            else:
+                assert not any(
+                    e
+                    for e in tx.events
+                    if isinstance(e, HashConsensus.QuorumSet)
                 )
 
             self.consensus_members.remove(member)
@@ -2745,8 +2763,14 @@ class CSMFuzzTest(FuzzTest):
                 )
                 in tx.events
             )
+        else:
+            assert not any(
+                e
+                for e in tx.events
+                if isinstance(e, CSFeeDistributor.DistributionDataUpdated)
+            )
         assert CSFeeDistributor.DistributionLogUpdated(report.logCid) in tx.events
-        assert self.fee_oracle.getConsensusReport()[0] == report_hash
+        assert self.fee_oracle.getConsensusReport() == (report_hash, ref_slot, slot_to_timestamp(frame_info[1]), True)
 
         logger.info(
             f"Submitted oracle data for ref slot {ref_slot} with {report.distributed} stETH shares distributed"
@@ -2790,6 +2814,12 @@ class CSMFuzzTest(FuzzTest):
 
         if claimed > 0:
             assert CSFeeDistributor.OperatorFeeDistributed(no.id, claimed) in tx.events
+        else:
+            assert not any(
+                e
+                for e in tx.events
+                if isinstance(e, CSFeeDistributor.OperatorFeeDistributed)
+            )
 
         logger.info(f"Pulled {claimed} stETH shares for NO {no.id}")
 
@@ -2937,6 +2967,12 @@ class CSMFuzzTest(FuzzTest):
                     CSFeeDistributor.OperatorFeeDistributed(no.id, pulled_shares)
                     in tx.events
                 )
+            else:
+                assert not any(
+                    e
+                    for e in tx.events
+                    if isinstance(e, CSFeeDistributor.OperatorFeeDistributed)
+                )
 
         # claim part
         print(f"error: {claimed_shares - shares_to_claim}")
@@ -3029,6 +3065,12 @@ class CSMFuzzTest(FuzzTest):
                 CSModule.ExitedSigningKeysCountChanged(no.id, no.exited_keys)
                 in tx.events
             )
+        else:
+            assert not any(
+                e
+                for e in tx.events
+                if isinstance(e, CSModule.ExitedSigningKeysCountChanged)
+            )
 
         assert CSModule.NonceChanged(self.nonce) in tx.events
 
@@ -3085,6 +3127,12 @@ class CSMFuzzTest(FuzzTest):
         if exited != no.exited_keys:
             no.exited_keys = exited
             assert CSModule.ExitedSigningKeysCountChanged(no.id, exited) in tx.events
+        else:
+            assert not any(
+                e
+                for e in tx.events
+                if isinstance(e, CSModule.ExitedSigningKeysCountChanged)
+            )
 
         self.nonce += 1
         assert CSModule.NonceChanged(self.nonce) in tx.events
