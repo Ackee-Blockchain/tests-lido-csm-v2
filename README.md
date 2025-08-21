@@ -19,4 +19,4 @@ This repository serves as an example of tests written using a development and te
 4. `wake test tests/integration/test_fuzz.py` to run CSM + TW fuzz test that forks CSM v1 contracts and Lido core contracts from mainnet and upgrades them
 5. `wake test tests/integration/test_no_upgrade_fuzz.py` to run CSM + TW fuzz test that deploys CSM v2 contracts and relevant Lido core contracts as new
 
-Tested with `wake` version `5.0.0`. Fuzz tests expect a local Ethereum mainnet node running at http://localhost:8545 synchronized to block `22576118` or later.
+Tested with `wake` version `5.0.0rc0`. Fuzz tests expect a local Ethereum mainnet node running at http://localhost:8545 synchronized to block `22576118` or later.
