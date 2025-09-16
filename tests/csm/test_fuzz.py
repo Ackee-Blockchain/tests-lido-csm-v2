@@ -400,6 +400,7 @@ class CSMFuzzTest(FuzzTest):
 
     no_id: uint
     nonce: uint
+    first_supported_slot: int
 
     vetted_season_active: bool
     vetted_referrals: dict[Account, uint]
@@ -627,7 +628,7 @@ class CSMFuzzTest(FuzzTest):
             ).return_value
         )
 
-        first_supported_slot = (
+        self.first_supported_slot = (
             chain.blocks["latest"].timestamp - GENESIS_TIME
         ) // SECONDS_PER_SLOT
 
@@ -678,8 +679,8 @@ class CSMFuzzTest(FuzzTest):
                     "000000000000000000000000000000000000000000000000000000000040000d"
                 ),
             ),
-            first_supported_slot,
-            first_supported_slot,
+            self.first_supported_slot,
+            self.first_supported_slot,
             CAPELLA_SLOT,
             self.admin,
         )
@@ -816,6 +817,9 @@ class CSMFuzzTest(FuzzTest):
             from_=self.fee_distributor,
         )
         self.shares[self.fee_distributor] = self.fee_distributor.totalClaimableShares()
+
+        # ensure at least one historical summary was created
+        chain.mine(lambda t: t + SLOTS_PER_HISTORICAL_ROOT * SECONDS_PER_SLOT)
 
     def post_invariants(self) -> None:
         time_delta = random_int(60 * 60, 5 * 60 * 60)
@@ -3167,7 +3171,9 @@ class CSMFuzzTest(FuzzTest):
             * 10**9
         )  # in wei, truncate to gwei
 
-        slot = timestamp_to_slot(chain.blocks["latest"].timestamp)
+        recent_slot = timestamp_to_slot(chain.blocks["latest"].timestamp)
+        # ensure old slot's historical summary was already created
+        old_slot = random_int(self.first_supported_slot, recent_slot - (recent_slot % SLOTS_PER_HISTORICAL_ROOT) - 1)
 
         old_state_tree = MerkleTree("sha256", hash_leaves=False, sort_pairs=False)
 
@@ -3179,7 +3185,7 @@ class CSMFuzzTest(FuzzTest):
             random_int(0, 2**64 - 1),
             random_int(0, 2**64 - 1),
             random_int(0, 2**64 - 1),
-            random_int(0, slot // SLOTS_PER_EPOCH),
+            random_int(0, old_slot // SLOTS_PER_EPOCH),
         )
         validator_root = hash_validator(validator)
 
@@ -3235,7 +3241,7 @@ class CSMFuzzTest(FuzzTest):
         )
 
         old_block_header = BeaconBlockHeader(
-            slot,
+            old_slot,
             random_int(0, 2**64 - 1),
             random_bytes(32),
             old_state_tree.root,
@@ -3293,7 +3299,7 @@ class CSMFuzzTest(FuzzTest):
         assert len(state_tree.leaves) == 3
 
         block_header = BeaconBlockHeader(
-            slot,
+            recent_slot,
             random_int(0, 2**64 - 1),
             random_bytes(32),
             state_tree.root,
@@ -4000,7 +4006,11 @@ class CSMFuzzTest(FuzzTest):
                 no_id, start_key, keys_count, refund_recipient, from_=sender, value=value
             )
 
-        if ex.value is not None:
+        if keys_count == 0:
+            assert ex.value == CSEjector.NothingToEject()
+            sender.balance -= value
+            return "Nothing to eject"
+        elif ex.value is not None:
             assert ex.value.tx.gas_used >= 29500000
             sender.balance -= value
             return "Out of gas"
@@ -4046,7 +4056,11 @@ class CSMFuzzTest(FuzzTest):
                 no_id, keys, refund_recipient, from_=sender, value=value
             )
 
-        if ex.value is not None:
+        if len(keys) == 0:
+            assert ex.value == CSEjector.NothingToEject()
+            sender.balance -= value
+            return "Nothing to eject"
+        elif ex.value is not None:
             assert ex.value.tx.gas_used >= 29500000
             sender.balance -= value
             return "Out of gas"
@@ -4668,7 +4682,7 @@ class CSMFuzzTest(FuzzTest):
                 if unbonded > no.total_keys - no.deposited_keys - no.withdrawn_keys:
                     target_limit_mode = 2
 
-                    if no.target_limit_mode == 2:
+                    if no.target_limit_mode != 0:
                         target_limit = min(
                             no.target_limit,
                             no.total_keys - no.withdrawn_keys - unbonded,

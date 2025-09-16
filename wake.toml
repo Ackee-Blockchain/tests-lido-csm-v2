@@ -4,6 +4,7 @@ remappings = [
     "csm:@openzeppelin/contracts/=csm/node_modules/@openzeppelin/contracts/",
     "csm:@openzeppelin/contracts-upgradeable/=csm/node_modules/@openzeppelin/contracts-upgradeable/",
     "tw:@openzeppelin/contracts-v4.4/=tw/node_modules/@openzeppelin/contracts-v4.4/",
+    "tw:@openzeppelin/contracts-v5.2/=tw/node_modules/@openzeppelin/contracts-v5.2/",
     "tw:@openzeppelin/contracts/=tw/node_modules/@openzeppelin/contracts/",
     "tw:contracts/=tw/contracts/",
 ]

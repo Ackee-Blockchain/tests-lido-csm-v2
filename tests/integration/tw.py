@@ -165,6 +165,7 @@ class TriggerableWithdrawalsFuzzTest(NorFuzzTest, CSMFuzzTest):
 
     nor_id: int
     csm_id: int
+    tw_first_supported_slot: int
 
     def pre_sequence(self) -> None:
         self.initial_epoch = timestamp_to_epoch(chain.blocks["pending"].timestamp)
@@ -211,7 +212,7 @@ class TriggerableWithdrawalsFuzzTest(NorFuzzTest, CSMFuzzTest):
             from_=self.admin,
         )
 
-        first_supported_slot = (
+        self.tw_first_supported_slot = (
             chain.blocks["latest"].timestamp - GENESIS_TIME
         ) // SECONDS_PER_SLOT
 
@@ -252,8 +253,8 @@ class TriggerableWithdrawalsFuzzTest(NorFuzzTest, CSMFuzzTest):
                     "000000000000000000000000000000000000000000000000000000000040000d"
                 ),
             ),
-            first_supported_slot,
-            first_supported_slot,
+            self.tw_first_supported_slot,
+            self.tw_first_supported_slot,
             CAPELLA_SLOT,
             SLOTS_PER_HISTORICAL_ROOT,
             SLOTS_PER_EPOCH,
@@ -473,6 +474,9 @@ class TriggerableWithdrawalsFuzzTest(NorFuzzTest, CSMFuzzTest):
             self.ejector,
             from_=self.admin,
         )
+
+        # ensure at least one historical summary was created
+        chain.mine(lambda t: t + SLOTS_PER_HISTORICAL_ROOT * SECONDS_PER_SLOT)
 
     def post_invariants(self) -> None:
         time_delta = random_int(60 * 60, 5 * 60 * 60)
@@ -1294,7 +1298,9 @@ class TriggerableWithdrawalsFuzzTest(NorFuzzTest, CSMFuzzTest):
             )
             nos[val_index] = (module_id, node_op_id, pubkey, index)
 
-        current_epoch = timestamp_to_epoch(chain.blocks["latest"].timestamp)
+        recent_slot = timestamp_to_slot(chain.blocks["latest"].timestamp)
+        # ensure old slot's historical summary was already created
+        old_slot = random_int(self.csm_first_supported_slot, recent_slot - (recent_slot % SLOTS_PER_HISTORICAL_ROOT) - 1)
 
         old_state_tree = MerkleTree("sha256", hash_leaves=False, sort_pairs=False)
         validators: dict[int, tuple[Validator, int]] = {}
@@ -1307,7 +1313,7 @@ class TriggerableWithdrawalsFuzzTest(NorFuzzTest, CSMFuzzTest):
                 effectiveBalance=random_int(0, 2**64 - 1),
                 slashed=random_bool(),
                 activationEligibilityEpoch=random_int(0, 2**64 - 1),
-                activationEpoch=random_int(self.initial_epoch, current_epoch),
+                activationEpoch=random_int(self.initial_epoch, old_slot // SLOTS_PER_EPOCH),
                 exitEpoch=uint64.max,
                 withdrawableEpoch=random_int(0, 2**64 - 1),
             )
@@ -1340,7 +1346,7 @@ class TriggerableWithdrawalsFuzzTest(NorFuzzTest, CSMFuzzTest):
             witnesses.append(witness)
 
         old_block_header = BeaconBlockHeader(
-            timestamp_to_slot(chain.blocks["latest"].timestamp),
+            old_slot,
             random_int(0, 2**64 - 1),
             random_bytes(32),
             old_state_tree.root,
@@ -1395,7 +1401,7 @@ class TriggerableWithdrawalsFuzzTest(NorFuzzTest, CSMFuzzTest):
         assert len(state_tree.leaves) == 2
 
         block_header = BeaconBlockHeader(
-            timestamp_to_slot(chain.blocks["latest"].timestamp),
+            recent_slot,
             random_int(0, 2**64 - 1),
             random_bytes(32),
             state_tree.root,
@@ -1415,7 +1421,7 @@ class TriggerableWithdrawalsFuzzTest(NorFuzzTest, CSMFuzzTest):
 
         random.shuffle(witnesses)
 
-        proof_slot_timestamp = slot_to_timestamp(block_header.slot)
+        proof_slot_timestamp = slot_to_timestamp(old_slot)
         penalty_applicable = []
         for w in witnesses:
             module_id, node_op_id, _, pubkey = self._unpack_exit_request(
@@ -1441,14 +1447,11 @@ class TriggerableWithdrawalsFuzzTest(NorFuzzTest, CSMFuzzTest):
                     eligible_to_exit,
                 ))
 
-        t = chain.blocks["pending"].timestamp
-
         with may_revert() as ex:
             tx = self.validator_exit_delay_verifier.verifyHistoricalValidatorExitDelay(
                 ProvableBeaconBlockHeader(block_header, tx.block.timestamp),
                 HistoricalHeaderWitness(
                     old_block_header,
-                    random_bytes(32),
                     historical_block_roots_tree.get_proof(historical_block_roots_index)
                     + historical_summary_tree.get_proof(0)
                     + historical_summaries_tree.get_proof(historical_summaries_index)
@@ -1466,28 +1469,24 @@ class TriggerableWithdrawalsFuzzTest(NorFuzzTest, CSMFuzzTest):
                 report, w.exitRequestIndex
             )
             activation_time = w.activationEpoch * SLOTS_PER_EPOCH * SECONDS_PER_SLOT + GENESIS_TIME + SHARD_COMMITTEE_PERIOD_IN_SECONDS
+            eligible_exit_request_timestamp = max(activation_time, report_delivery_timestamp)
 
-            if activation_time > t:
+            if proof_slot_timestamp <= eligible_exit_request_timestamp:
                 assert (
                     ex.value
                     == ValidatorExitDelayVerifier.ExitIsNotEligibleOnProvableBeaconBlock(
                         proof_slot_timestamp,
-                        activation_time,
+                        eligible_exit_request_timestamp,
                     )
                 )
                 return f"Exit is not eligible"
 
-            eligible_to_exit = proof_slot_timestamp - max(
-                activation_time,
-                report_delivery_timestamp,
-            )
-
             if module_id == self.csm_id:
-                error = self.csm_on_validator_exit_delay(node_op_id, pubkey, eligible_to_exit, p, tx)
+                error = self.csm_on_validator_exit_delay(node_op_id, pubkey, proof_slot_timestamp - eligible_exit_request_timestamp, p, tx)
                 if error is not None:
                     return error
             else:
-                error = self.nor_on_validator_exit_delay(node_op_id, pubkey, eligible_to_exit, p, proof_slot_timestamp, tx)
+                error = self.nor_on_validator_exit_delay(node_op_id, pubkey, proof_slot_timestamp - eligible_exit_request_timestamp, p, proof_slot_timestamp, tx)
                 if error is not None:
                     return error
 
