@@ -45,6 +45,8 @@ from pytypes.csm.node_modules.openzeppelin.contracts.token.ERC20.extensions.IERC
     IERC20Permit,
 )
 from pytypes.tw.contracts._0_8_9.TriggerableWithdrawalsGateway import TriggerableWithdrawalsGateway
+from pytypes.tw.contracts._0_8_9.WithdrawalQueue import WithdrawalQueue
+from pytypes.tw.contracts._0_6_11.deposit_contract import IDepositContract
 from pytypes.tests.IEIP712 import IEIP712
 
 from ..merkle_tree import MerkleTree
@@ -533,6 +535,11 @@ class CSMFuzzTest(FuzzTest):
         AssetRecovererLib.deploy()
         NOAddresses.deploy()
         QueueLib.deploy()
+
+        # implementation contract of UNST_ETH
+        Account("0xE42C659Dc09109566720EA8b2De186c2Be7D94D9").pytypes_resolver = WithdrawalQueue
+
+        DEPOSIT_CONTRACT.pytypes_resolver = IDepositContract
 
         domain = IEIP712(ST_ETH).eip712Domain()
         self.steth_domain = Eip712Domain(
@@ -2326,13 +2333,11 @@ class CSMFuzzTest(FuzzTest):
 
         for i in range(deposits_count):
             e = tx.events[events_index]
-            assert (
-                isinstance(e, ExternalEvent)
-                and e._event_full_name == "DepositContract.DepositEvent"
-                and e.pubkey == keys[i * 48 : i * 48 + 48]
-                and e.withdrawal_credentials == wc
-                and e.signature == signatures[i * 96 : i * 96 + 96]
-            )
+            assert isinstance(e, IDepositContract.DepositEvent)
+            assert e.pubkey == keys[i * 48 : i * 48 + 48]
+            assert e.withdrawal_credentials == wc
+            assert e.signature == signatures[i * 96 : i * 96 + 96]
+
             events_index += 1
 
     @flow()
@@ -2820,7 +2825,7 @@ class CSMFuzzTest(FuzzTest):
         depositable_before = self.csm.getNodeOperator(no.id).depositableValidatorsCount
 
         p = random.random()
-        with may_revert((CSAccounting.NothingToClaim, ExternalError)) as ex:
+        with may_revert((CSAccounting.NothingToClaim, WithdrawalQueue.RequestAmountTooSmall, WithdrawalQueue.RequestAmountTooLarge)) as ex:
             if p < 0.33:
                 # unstETH
                 balance_before = 0
@@ -2884,37 +2889,23 @@ class CSMFuzzTest(FuzzTest):
                     in tx.events
                 )
 
+        s = ST_ETH.getPooledEthByShares(
+            ST_ETH.getSharesByPooledEth(
+                ST_ETH.getPooledEthByShares(min(shares_to_claim, claimable_shares))
+            )
+        )
+
         if isinstance(ex.value, CSAccounting.NothingToClaim):
-            assert (
-                min(shares_to_claim, claimable_shares) == 0
-                or p < 0.66
-                and ST_ETH.getSharesByPooledEth(
-                    ST_ETH.getPooledEthByShares(shares_to_claim)
-                )
-                == 0
-            )
+            assert min(shares_to_claim, claimable_shares) == 0 or s == 0
             return "Nothing to claim"
-        elif isinstance(ex.value, ExternalError):
-            s = ST_ETH.getPooledEthByShares(
-                ST_ETH.getSharesByPooledEth(
-                    ST_ETH.getPooledEthByShares(min(shares_to_claim, claimable_shares))
-                )
-            )
-            if p < 0.33 and s < 100:
-                assert (
-                    ex.value._error_full_name
-                    == "WithdrawalQueueERC721.RequestAmountTooSmall"
-                )
-                return "Request amount too small"
-            elif p < 0.33 and s > 1000 * 10**18:
-                assert (
-                    ex.value._error_full_name
-                    == "WithdrawalQueueERC721.RequestAmountTooLarge"
-                )
-                return "Request amount too large"
-            else:
-                raise Exception("Unexpected error")
-        assert ex.value is None
+        elif isinstance(ex.value, WithdrawalQueue.RequestAmountTooSmall):
+            assert p < 0.33 and s < 100
+            return "Request amount too small"
+        elif isinstance(ex.value, WithdrawalQueue.RequestAmountTooLarge):
+            assert p < 0.33 and s > 1000 * 10**18
+            return "Request amount too large"
+        else:
+            assert ex.value is None
 
         # pull part
         if len(proof) != 0:

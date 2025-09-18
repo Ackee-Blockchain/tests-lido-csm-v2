@@ -38,6 +38,7 @@ from pytypes.csm.src.interfaces.IStakingRouter import IStakingRouter
 from pytypes.csm.node_modules.openzeppelin.contracts.token.ERC20.extensions.IERC20Permit import (
     IERC20Permit,
 )
+from pytypes.tw.contracts._0_8_9.WithdrawalQueue import WithdrawalQueue
 from pytypes.tests.IEIP712 import IEIP712
 from pytypes.tests.csm.MockLocator import MockLocator
 from pytypes.tests.csm.MockTriggerableWithdrawalsGateway import (
@@ -539,6 +540,9 @@ class CSMFuzzTest(FuzzTest):
         AssetRecovererLib.deploy()
         NOAddresses.deploy()
         QueueLib.deploy()
+
+        # implementation contract of UNST_ETH
+        Account("0xE42C659Dc09109566720EA8b2De186c2Be7D94D9").pytypes_resolver = WithdrawalQueue
 
         domain = IEIP712(ST_ETH).eip712Domain()
         self.steth_domain = Eip712Domain(
@@ -2863,7 +2867,7 @@ class CSMFuzzTest(FuzzTest):
         ).depositableValidatorsCount
 
         p = random.random()
-        with may_revert((CSAccounting.NothingToClaim, ExternalError)) as ex:
+        with may_revert((CSAccounting.NothingToClaim, WithdrawalQueue.RequestAmountTooSmall, WithdrawalQueue.RequestAmountTooLarge)) as ex:
             if p < 0.33:
                 # unstETH
                 balance_before = 0
@@ -2927,37 +2931,23 @@ class CSMFuzzTest(FuzzTest):
                     in tx.events
                 )
 
+        s = ST_ETH.getPooledEthByShares(
+            ST_ETH.getSharesByPooledEth(
+                ST_ETH.getPooledEthByShares(min(shares_to_claim, claimable_shares))
+            )
+        )
+
         if isinstance(ex.value, CSAccounting.NothingToClaim):
-            assert (
-                min(shares_to_claim, claimable_shares) == 0
-                or p < 0.66
-                and ST_ETH.getSharesByPooledEth(
-                    ST_ETH.getPooledEthByShares(shares_to_claim)
-                )
-                == 0
-            )
+            assert min(shares_to_claim, claimable_shares) == 0 or s == 0
             return "Nothing to claim"
-        elif isinstance(ex.value, ExternalError):
-            s = ST_ETH.getPooledEthByShares(
-                ST_ETH.getSharesByPooledEth(
-                    ST_ETH.getPooledEthByShares(min(shares_to_claim, claimable_shares))
-                )
-            )
-            if p < 0.33 and s < 100:
-                assert (
-                    ex.value._error_full_name
-                    == "WithdrawalQueueERC721.RequestAmountTooSmall"
-                )
-                return "Request amount too small"
-            elif p < 0.33 and s > 1000 * 10**18:
-                assert (
-                    ex.value._error_full_name
-                    == "WithdrawalQueueERC721.RequestAmountTooLarge"
-                )
-                return "Request amount too large"
-            else:
-                raise Exception("Unexpected error")
-        assert ex.value is None
+        elif isinstance(ex.value, WithdrawalQueue.RequestAmountTooSmall):
+            assert p < 0.33 and s < 100
+            return "Request amount too small"
+        elif isinstance(ex.value, WithdrawalQueue.RequestAmountTooLarge):
+            assert p < 0.33 and s > 1000 * 10**18
+            return "Request amount too large"
+        else:
+            assert ex.value is None
 
         # pull part
         if len(proof) != 0:
